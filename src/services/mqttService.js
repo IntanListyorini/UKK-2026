@@ -20,7 +20,9 @@ export const TOPICS = {
   },
 }
 
-const MQTT_URL = 'wss://broker.hivemq.com:8884/mqtt'
+const MQTT_URL = 'wss://1c6b781293844cef9b0e9fd16766dc34.s1.eu.hivemq.cloud:8884/mqtt'
+const MQTT_USERNAME = 'Intan_Listyorini'
+const MQTT_PASSWORD = 'ukkStemsend22'
 
 const SUBSCRIBE_TOPICS = [
   TOPICS.suhu,
@@ -36,6 +38,8 @@ const SUBSCRIBE_TOPICS = [
 export function connectMqtt({ onConnect, onDisconnect, onMessage, onError }) {
   const client = mqtt.connect(MQTT_URL, {
     clientId: `web-ukk-2026-${Math.random().toString(16).slice(2)}`,
+    username: MQTT_USERNAME,
+    password: MQTT_PASSWORD,
     clean: true,
     connectTimeout: 5000,
     reconnectPeriod: 2500,

@@ -164,6 +164,58 @@ function normalizePayload(value) {
   return String(value).trim().toUpperCase()
 }
 
+function createDangerSoundLoop() {
+  const AudioContext = window.AudioContext || window.webkitAudioContext
+
+  if (!AudioContext) return null
+
+  const audioContext = new AudioContext()
+  let stopped = false
+
+  function playSiren() {
+    if (stopped) return
+
+    const startTime = audioContext.currentTime
+    const pulses = [
+      { start: 0, from: 420, to: 1080 },
+      { start: 0.36, from: 1080, to: 520 },
+    ]
+
+    pulses.forEach(({ start, from, to }) => {
+      const oscillator = audioContext.createOscillator()
+      const gain = audioContext.createGain()
+      const pulseStart = startTime + start
+      const pulseEnd = pulseStart + 0.32
+
+      oscillator.type = 'sawtooth'
+      oscillator.frequency.setValueAtTime(from, pulseStart)
+      oscillator.frequency.exponentialRampToValueAtTime(to, pulseEnd)
+
+      gain.gain.setValueAtTime(0.0001, pulseStart)
+      gain.gain.exponentialRampToValueAtTime(0.16, pulseStart + 0.04)
+      gain.gain.exponentialRampToValueAtTime(0.0001, pulseEnd)
+
+      oscillator.connect(gain)
+      gain.connect(audioContext.destination)
+      oscillator.start(pulseStart)
+      oscillator.stop(pulseEnd)
+    })
+  }
+
+  audioContext.resume?.().catch(() => {})
+  playSiren()
+
+  const intervalId = window.setInterval(playSiren, 900)
+
+  return {
+    stop() {
+      stopped = true
+      window.clearInterval(intervalId)
+      audioContext.close().catch(() => {})
+    },
+  }
+}
+
 function LoadingScreen() {
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-950 px-6 text-white">
@@ -215,6 +267,7 @@ function App() {
   const [isLoading, setIsLoading] = useState(true)
   const [connection, setConnection] = useState('Disconnected')
   const clientRef = useRef(null)
+  const dangerSoundRef = useRef(null)
   const snapshotRef = useRef({
     temperature: '--',
     humidity: '--',
@@ -264,6 +317,21 @@ function App() {
     setNotifications([])
   }
 
+  function startDangerSound() {
+    if (dangerSoundRef.current) return
+
+    try {
+      dangerSoundRef.current = createDangerSoundLoop()
+    } catch {
+      dangerSoundRef.current = null
+    }
+  }
+
+  function stopDangerSound() {
+    dangerSoundRef.current?.stop()
+    dangerSoundRef.current = null
+  }
+
   useEffect(() => {
     const loadingTimer = window.setTimeout(() => {
       setIsLoading(false)
@@ -271,6 +339,20 @@ function App() {
 
     return () => window.clearTimeout(loadingTimer)
   }, [])
+
+  useEffect(() => {
+    const nextTemperature = Number(temperature)
+
+    if (!Number.isNaN(nextTemperature) && nextTemperature > 30) {
+      startDangerSound()
+    } else {
+      stopDangerSound()
+    }
+
+    return () => {
+      stopDangerSound()
+    }
+  }, [temperature])
 
   useEffect(() => {
     if (isLoading) return undefined
