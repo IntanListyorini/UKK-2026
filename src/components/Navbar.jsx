@@ -56,7 +56,7 @@ function Navbar({ connection, isDark, notifications = [], onClearNotifications, 
             </button>
 
             {isNotificationOpen && (
-              <div className="absolute right-0 top-12 z-30 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl dark:border-slate-800 dark:bg-slate-900">
+              <div className="fixed left-4 right-4 top-[8.5rem] z-10 w-auto overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl dark:border-slate-800 dark:bg-slate-900 sm:absolute sm:left-auto sm:right-0 sm:top-12 sm:w-[min(22rem,calc(100vw-2rem))]">
                 <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 dark:border-slate-800">
                   <div>
                     <p className="text-sm font-bold text-slate-950 dark:text-white">
@@ -77,7 +77,7 @@ function Navbar({ connection, isDark, notifications = [], onClearNotifications, 
                   </button>
                 </div>
 
-                <div className="max-h-80 overflow-y-auto p-3">
+                <div className="max-h-[60vh] overflow-y-auto p-3 sm:max-h-80">
                   {notifications.length === 0 ? (
                     <div className="py-8 text-center text-sm text-slate-500 dark:text-slate-400">
                       Belum ada notifikasi.
