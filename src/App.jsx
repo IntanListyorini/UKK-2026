@@ -1,14 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Activity,
+  ArrowLeftRight,
   Cpu,
   Droplets,
   Eye,
   Flame,
-  Moon,
   Power,
   RefreshCw,
-  Sun,
   ThermometerSun,
 } from 'lucide-react'
 import Navbar from './components/Navbar'
@@ -17,6 +16,7 @@ import RelayControl from './components/RelayControl'
 import TemperatureChart from './components/Chart'
 import HistoryTable from './components/HistoryTable'
 import { connectMqtt, publishMessage, TOPICS } from './services/mqttService'
+import warningAlarmSound from './assets/warning-alarm-sound-effect-2.mp3'
 
 const initialRelays = {
   relay1: 'OFF',
@@ -38,7 +38,7 @@ function getTemperatureStatus(value) {
     }
   }
 
-  if (temperature > 30) {
+  if (temperature >= 30) {
     return {
       label: 'Bahaya',
       tone: 'bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300',
@@ -165,53 +165,16 @@ function normalizePayload(value) {
 }
 
 function createDangerSoundLoop() {
-  const AudioContext = window.AudioContext || window.webkitAudioContext
+  const audio = new Audio(warningAlarmSound)
+  audio.loop = true
+  audio.preload = 'auto'
 
-  if (!AudioContext) return null
-
-  const audioContext = new AudioContext()
-  let stopped = false
-
-  function playSiren() {
-    if (stopped) return
-
-    const startTime = audioContext.currentTime
-    const pulses = [
-      { start: 0, from: 420, to: 1080 },
-      { start: 0.36, from: 1080, to: 520 },
-    ]
-
-    pulses.forEach(({ start, from, to }) => {
-      const oscillator = audioContext.createOscillator()
-      const gain = audioContext.createGain()
-      const pulseStart = startTime + start
-      const pulseEnd = pulseStart + 0.32
-
-      oscillator.type = 'sawtooth'
-      oscillator.frequency.setValueAtTime(from, pulseStart)
-      oscillator.frequency.exponentialRampToValueAtTime(to, pulseEnd)
-
-      gain.gain.setValueAtTime(0.0001, pulseStart)
-      gain.gain.exponentialRampToValueAtTime(0.16, pulseStart + 0.04)
-      gain.gain.exponentialRampToValueAtTime(0.0001, pulseEnd)
-
-      oscillator.connect(gain)
-      gain.connect(audioContext.destination)
-      oscillator.start(pulseStart)
-      oscillator.stop(pulseEnd)
-    })
-  }
-
-  audioContext.resume?.().catch(() => {})
-  playSiren()
-
-  const intervalId = window.setInterval(playSiren, 900)
+  audio.play().catch(() => {})
 
   return {
     stop() {
-      stopped = true
-      window.clearInterval(intervalId)
-      audioContext.close().catch(() => {})
+      audio.pause()
+      audio.currentTime = 0
     },
   }
 }
@@ -282,14 +245,18 @@ function App() {
   const [relays, setRelays] = useState(initialRelays)
   const [lastUpdate, setLastUpdate] = useState('-')
   const [temperatureHistory, setTemperatureHistory] = useState([])
+  const [humidityHistory, setHumidityHistory] = useState([])
   const [sensorHistory, setSensorHistory] = useState([])
   const [notifications, setNotifications] = useState([])
-  const [showHeatAlert, setShowHeatAlert] = useState(false)
 
   const temperatureStatus = useMemo(
     () => getTemperatureStatus(temperature),
     [temperature],
   )
+  const isHeatDanger = useMemo(() => {
+    const nextTemperature = Number(temperature)
+    return !Number.isNaN(nextTemperature) && nextTemperature >= 30
+  }, [temperature])
   const humidityStatus = useMemo(() => getHumidityStatus(humidity), [humidity])
   const ldrStatus = useMemo(() => getLdrStatus(ldr), [ldr])
   const modeStatus = useMemo(() => getModeStatus(mode), [mode])
@@ -343,7 +310,7 @@ function App() {
   useEffect(() => {
     const nextTemperature = Number(temperature)
 
-    if (!Number.isNaN(nextTemperature) && nextTemperature > 30) {
+    if (!Number.isNaN(nextTemperature) && nextTemperature >= 30) {
       startDangerSound()
     } else {
       stopDangerSound()
@@ -401,9 +368,7 @@ function App() {
                 suhu: nextTemperature,
               },
             ])
-            setShowHeatAlert(nextTemperature > 30)
-
-            if (nextTemperature > 30 && (Number.isNaN(previousTemperature) || previousTemperature <= 30)) {
+            if (nextTemperature >= 30 && (Number.isNaN(previousTemperature) || previousTemperature < 30)) {
               addNotification(
                 'danger',
                 'Suhu Bahaya',
@@ -412,8 +377,8 @@ function App() {
               )
             } else if (
               nextTemperature >= 26 &&
-              nextTemperature <= 30 &&
-              (Number.isNaN(previousTemperature) || previousTemperature < 26 || previousTemperature > 30)
+              nextTemperature < 30 &&
+              (Number.isNaN(previousTemperature) || previousTemperature < 26 || previousTemperature >= 30)
             ) {
               addNotification(
                 'warning',
@@ -430,6 +395,16 @@ function App() {
           const displayHumidity = Number.isNaN(nextHumidity) ? message : nextHumidity
           nextSnapshot.humidity = displayHumidity
           setHumidity(displayHumidity)
+
+          if (!Number.isNaN(nextHumidity)) {
+            setHumidityHistory((items) => [
+              ...items.slice(-19),
+              {
+                time: formattedTime,
+                kelembaban: nextHumidity,
+              },
+            ])
+          }
         }
 
         if (topic === TOPICS.ldr) {
@@ -518,23 +493,18 @@ function App() {
             />
 
             <section className="space-y-5 px-4 py-5 sm:px-6 lg:px-8">
-              {showHeatAlert && (
-                <div className="flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 shadow-sm dark:border-rose-500/25 dark:bg-rose-500/10 dark:text-rose-200">
+              {isHeatDanger && (
+                <div className="sticky top-28 z-10 md:top-24 flex items-center gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 shadow-sm dark:border-rose-500/25 dark:bg-rose-500/10 dark:text-rose-200">
                   <div className="flex items-center gap-3">
                     <Flame className="h-5 w-5" />
-                    <span>Suhu melewati 30 C. Periksa ruang dan perangkat pendingin.</span>
+                    <span>Suhu mencapai atau melewati 30 C. Periksa ruang dan perangkat pendingin.</span>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowHeatAlert(false)}
-                    className="rounded-md px-2 py-1 font-semibold transition hover:bg-rose-100 dark:hover:bg-rose-500/20"
-                  >
-                    Tutup
-                  </button>
                 </div>
               )}
 
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <div
+                className={`grid gap-4 transition-all duration-300 sm:grid-cols-2 xl:grid-cols-4 ${isHeatDanger ? 'pt-2 sm:pt-3' : ''}`}
+              >
                 <SensorCard
                   title="Suhu"
                   value={temperature}
@@ -586,7 +556,7 @@ function App() {
                       onClick={handleModeToggle}
                       className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200"
                     >
-                      {mode === 'AUTO' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+                      <ArrowLeftRight className="h-4 w-4" />
                       Ubah
                     </button>
                   }
@@ -595,8 +565,10 @@ function App() {
 
               <div className="grid gap-5 xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.75fr)]">
                 <TemperatureChart
-                  data={temperatureHistory}
-                  status={temperatureStatus}
+                  temperatureData={temperatureHistory}
+                  humidityData={humidityHistory}
+                  temperatureStatus={temperatureStatus}
+                  humidityStatus={humidityStatus}
                   lastUpdate={lastUpdate}
                 />
                 <RelayControl
